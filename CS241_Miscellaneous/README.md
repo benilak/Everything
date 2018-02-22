@@ -1,0 +1,1 @@
+A folder containing various python files, scratch files, assignments, class notes, and an Oxford comma pertaining to CS241 - Object-Oriented Programming & Data Structures. The files themselves and the code within are probably messy and disorganized to a fair extent. 

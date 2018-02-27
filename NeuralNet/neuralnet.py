@@ -6,6 +6,20 @@ from sklearn.model_selection import train_test_split
 import math
 
 
+def check_accuracy(predictions, targets):
+    """
+    Checks the accuracy of predicted values.
+
+    :param list predictions: a list of the predicted classes for the data
+    :param pd.Series targets: the testing targets used for determining the model's accuracy
+    :return string: a statement describing the accuracy of the model
+    """
+
+    correct = len([i for i, j in zip(predictions, targets) if i == j])
+    accuracy = correct / len(targets)
+    return "{}/{} correct - {:.1f}% accuracy".format(correct, len(targets), accuracy * 100)
+
+
 class Node:
     def __init__(self, value=None, error=None, weights=None):
         """
@@ -32,51 +46,39 @@ class Layer:
 
 
 class NetModel:
-    def __init__(self, data, targets, net):
+    def __init__(self, net):
         """
-        A model for neural net learning, which can make predictions for the classification of given data.
+        A neural net, which can make predictions for the classification of given data.
 
-        :param pd.DataFrame data: the testing data used to make predictions
-        :param pd.Series targets: the testing targets used for determining the model's accuracy
         :param list net: a list of layers from the NetClassifier, which is a description of the neural net
         """
 
-        self.data = data
-        self.data.insert(0, 'Bias', [-1 for i in range(data.shape[0])])
-        self.targets = targets
         self.net = net
-        self.classes = self.targets.unique()
-        self.classes.sort()
-        self.predictions = []
 
-    def check_accuracy(self):
-        """
-        Checks the accuracy of predicted values.
-
-        :return string: a statement describing the accuracy of the model
-        """
-
-        correct = len([i for i, j in zip(self.predictions, self.targets) if i == j])
-        accuracy = correct / len(self.targets)
-        return "{}/{} correct - {:.1f}% accuracy".format(correct, len(self.targets), accuracy * 100)
-
-    def predict(self):
+    def predict(self, data, targets):
         """
         Makes predictions for the testing data.
         The code itself is essentially just a subset of the training algorithm in the NetClassifier
 
+        :param pd.DataFrame data: the testing data used to make predictions
+        :param pd.Series targets: the testing targets used for determining the model's accuracy
         :return pd.Series: a series (to be consistent with the training targets) containing the predictions
         """
 
+        data.insert(0, 'Bias', [-1 for i in range(data.shape[0])])
+        classes = targets.unique()
+        classes.sort()
+        predictions = []
+
         # for each row in the data, iterate over each layer
-        for r in range(self.data.shape[0]):
+        for r in range(data.shape[0]):
 
             # FEED FORWARD through each layer
             for i, layer in enumerate(self.net):
                 # set values for the input nodes
                 if i == 0:
                     for j, node in enumerate(layer.nodes):
-                        node.value = self.data.iloc[r, j]
+                        node.value = data.iloc[r, j]
                 # update values of the remaining nodes
                 else:
                     for node in layer.nodes:
@@ -84,12 +86,12 @@ class NetModel:
                         product = [j * k for j, k in zipp]
                         node.value = 1 / (1 + math.exp(-math.fsum(product)))
 
-            prediction = self.classes[np.argmax([node.value for node in self.net[-1].nodes])]
-            self.predictions.append(prediction)
+            prediction = classes[np.argmax([node.value for node in self.net[-1].nodes])]
+            predictions.append(prediction)
 
-        accuracy = self.check_accuracy()
+        accuracy = check_accuracy(predictions, targets)
 
-        return self.predictions, accuracy
+        return predictions, accuracy
 
 
 class NetClassifier:
@@ -123,7 +125,8 @@ class NetClassifier:
                 pass
             else:
                 for node in layer.nodes:
-                    node.weights = [uniform(-1/math.sqrt(len(layer.nodes)), 1/math.sqrt(len(layer.nodes)))
+                    node.weights = [uniform(-1/math.sqrt(len(self.layers[i-1].nodes)),
+                                            1/math.sqrt(len(self.layers[i-1].nodes)))
                                     for n in range(len(self.layers[i - 1].nodes))]
 
     def build_net(self, rate=0.2, cycles=1000):
@@ -146,19 +149,62 @@ class NetClassifier:
                     if i == 0:
                         for j, node in enumerate(layer.nodes):
                             node.value = self.data.iloc[r, j]
-                    # update values of the remaining nodes
+                    # update values for the hidden nodes
+                    elif i != (len(self.layers) - 1):
+                        for n, node in enumerate(layer.nodes):
+                            if n == 0:
+                                node.value = -1
+                            else:
+                                values = [node.value for node in self.layers[i - 1].nodes]
+                                v_zip = zip(values, node.weights)
+                                v_product = [j * k for j, k in v_zip]
+                                node.value = 1 / (1 + math.exp(-math.fsum(v_product)))
                     else:
-                        for node in layer.nodes:
+                        for n, node in enumerate(layer.nodes):
                             values = [node.value for node in self.layers[i - 1].nodes]
-                            zipp = zip(values, node.weights)
-                            product = [j * k for j, k in zipp]
-                            node.value = 1 / (1 + math.exp(-math.fsum(product)))
+                            v_zip = zip(values, node.weights)
+                            v_product = [j * k for j, k in v_zip]
+                            node.value = 1 / (1 + math.exp(-math.fsum(v_product)))
 
-            # PROPAGATE BACK through each layer
-            # TODO: write algorithm to update weights and errors after feed-forward
-
-        # after training, the neural net to be tested on is fully described by the list of layers,
-        # because it contains the net structure and the weights of each node
+                # PROPAGATE BACK through each layer
+                for i, layer in reversed(list(enumerate(self.layers))):
+                    # calculate output errors
+                    if i == (len(self.layers) - 1):
+                        for j, node in enumerate(layer.nodes):
+                            target = int(self.classes[j] == self.targets.iloc[r])
+                            node.error = node.value * (1 - node.value) * (node.value - target)
+                            node.weights = [(weight - rate * node.error * self.layers[i-1].nodes[q].value)
+                                            for q, weight in enumerate(node.weights)]
+                    # calculate errors for the layer preceding the output layer
+                    elif i == (len(self.layers) - 2):
+                        for j, node in enumerate(layer.nodes):
+                            if j == 0:
+                                pass
+                            else:
+                                errors = [node.error for node in self.layers[i + 1].nodes]
+                                weights = [node.weights[j] for node in self.layers[i + 1].nodes]
+                                e_zip = zip(errors, weights)
+                                e_product = [m * n for m, n in e_zip]
+                                node.error = node.value * (1 - node.value) * math.fsum(e_product)
+                                node.weights = [(weight - rate * node.error * self.layers[i - 1].nodes[q].value)
+                                                for q, weight in enumerate(node.weights)]
+                    # calculate errors for all other hidden layers
+                    elif i != 0:
+                        for j, node in enumerate(layer.nodes):
+                            if j == 0:
+                                pass
+                            else:
+                                errors = [node.error for node in self.layers[i + 1].nodes[1:]]
+                                weights = [node.weights[j] for node in self.layers[i + 1].nodes[1:]]
+                                e_zip = zip(errors, weights)
+                                e_product = [m * n for m, n in e_zip]
+                                node.error = node.value * (1 - node.value) * math.fsum(e_product)
+                                node.weights = [(weight - rate * node.error * self.layers[i - 1].nodes[q].value)
+                                                for q, weight in enumerate(node.weights)]
+                    # the input nodes do not have errors or weights
+                    else:
+                        pass
+            print(cycle)
         return self.layers
 
 
@@ -167,10 +213,10 @@ trash, iris_data, iris_targets = np.hsplit(iris, [1, 5])
 iris_data = pd.DataFrame(normalize(iris_data))
 iris_targets = iris_targets.iloc[:, 0]
 data_train, data_test, targets_train, targets_test = \
-    train_test_split(iris_data, iris_targets, train_size=2/3, test_size=1/3)
+    train_test_split(iris_data, iris_targets, train_size=2/3, test_size=1/3, random_state=11)
 
-classifier = NetClassifier(data_train, targets_train, [2, 3, 2])
-neuralnet = classifier.build_net()
-model = NetModel(data_test, targets_test, neuralnet)
-model.predict()
-print(model.check_accuracy())
+classifier = NetClassifier(data_train, targets_train, [4])
+neuralnet = classifier.build_net(rate=0.08, cycles=1000)
+model = NetModel(neuralnet)
+predictions = model.predict(data_test, targets_test)
+print(predictions[1])

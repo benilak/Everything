@@ -206,17 +206,3 @@ class NetClassifier:
                         pass
             print(cycle)
         return self.layers
-
-
-iris = pd.read_csv('iris.txt')
-trash, iris_data, iris_targets = np.hsplit(iris, [1, 5])
-iris_data = pd.DataFrame(normalize(iris_data))
-iris_targets = iris_targets.iloc[:, 0]
-data_train, data_test, targets_train, targets_test = \
-    train_test_split(iris_data, iris_targets, train_size=2/3, test_size=1/3, random_state=11)
-
-classifier = NetClassifier(data_train, targets_train, [4])
-neuralnet = classifier.build_net(rate=0.08, cycles=1000)
-model = NetModel(neuralnet)
-predictions = model.predict(data_test, targets_test)
-print(predictions[1])

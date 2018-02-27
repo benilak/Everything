@@ -1,3 +1,8 @@
+"""
+Iris data set configured to be passed through the NetClassifier.
+For reference only (this code will not run as is).
+"""
+
 iris = pd.read_csv('iris.txt')
 trash, iris_data, iris_targets = np.hsplit(iris, [1, 5])
 iris_data = pd.DataFrame(normalize(iris_data))
